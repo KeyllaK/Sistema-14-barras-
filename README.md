@@ -4,17 +4,28 @@ Sistema de fluxo de potência de 14 barras analisado por métodos numéricos no 
 -👥 Autora
 Keylla Kaylla SIlva de Oliveira
 
--🚀 Funcionalidades
-Fluxos de sistema de potência ativa e reativa
-Cálculo de tensão nas barras 
-Cálculo de perdas nas linhas
+## 🎯 Funcionalidades
 
--📂 Estrutura do Projeto
-Arquivos excel 
-Matriz_admitância.xlsx
-Barras.xlsx
-impedância.xlsx
-gauss_seidel/ # Implementação do método GS
-newton_raphson/ # Implementação do método NR
+-Fluxos de sistema de potência ativa e reativa
+-Cálculo de tensão nas barras 
+-Cálculo de perdas nas linhas
 
-README/ # README do projeto
+## 🛠️ Tecnologias Utilizadas
+
+- Matlab
+- Matpower
+- 
+## 📋 Pré-requisitos
+
+-  Matlab instalado
+-  Matpower configurado e integrado no matlab
+-  Arquivos excel (Matriz_admitância.xlsx, Barras.xlsx, impedância.xlsx)
+- gauss_seidel/ # Implementação do método GS
+- newton_raphson/ # Implementação do método NR
+
+## 🚀 Como Executar
+
+1. Clone o repositório:
+```bash
+git clone [https://github.com/KeyllaK/Atividade-Temporizadores.git]
+```
