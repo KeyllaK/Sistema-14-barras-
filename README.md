@@ -14,7 +14,7 @@ Keylla Kaylla SIlva de Oliveira
 
 - Matlab
 - Matpower
-- 
+  
 ## 📋 Pré-requisitos
 
 -  Matlab instalado
@@ -27,5 +27,5 @@ Keylla Kaylla SIlva de Oliveira
 
 1. Clone o repositório:
 ```bash
-git clone [https://github.com/KeyllaK/Atividade-Temporizadores.git]
+git clone [https://github.com/KeyllaK/Sistema-14-barras-.git]
 ```
