@@ -1,0 +1,316 @@
+%14 barras Newton Raphson
+
+%estrutura
+tol = 1e-4;     
+lim = 100;      
+Sbase = 100;    
+basemva = Sbase;
+tic
+
+% -------------- dados das linhas -----------------
+%	fbus	tbus	r	x	b	rateA	rateB	rateC	ratio	angle	status
+mpc.branch = [
+	1	2	0.01938	0.05917	0.0528	0	0	0	0	0	1;
+	1	5	0.05403	0.22304	0.0492	0	0	0	0	0	1;
+	2	3	0.04699	0.19797	0.0438	0	0	0	0	0	1;
+	2	4	0.05811	0.17632	0.034	0	0	0	0	0	1;
+	2	5	0.05695	0.17388	0.0346	0	0	0	0	0	1;
+	3	4	0.06701	0.17103	0.0128	0	0	0	0	0	1;
+	4	5	0.01335	0.04211	0	0	0	0	0	0	1;
+	4	7	0	0.20912	0	0	0	0	0.978	0	1;
+	4	9	0	0.55618	0	0	0	0	0.969	0	1;
+	5	6	0	0.25202	0	0	0	0	0.932	0	1;
+	6	11	0.09498	0.1989	0	0	0	0	0	0	1;
+	6	12	0.12291	0.25581	0	0	0	0	0	0	1;
+	6	13	0.06615	0.13027	0	0	0	0	0	0	1;
+	7	8	0	0.17615	0	0	0	0	0	0	1;
+	7	9	0	0.11001	0	0	0	0	0	0	1;
+	9	10	0.03181	0.0845	0	0	0	0	0	0	1;
+	9	14	0.12711	0.27038	0	0	0	0	0	0	1;
+	10	11	0.08205	0.19207	0	0	0	0	0	0	1;
+	12	13	0.22092	0.19988	0	0	0	0	0	0	1;
+	13	14	0.17093	0.34802	0	0	0	0	0	0	1;
+];
+
+% ---------------dados barras ---------------
+% bus data
+%	bus_i	type	Pd	Qd	Gs	Bs	area	Vm	Va	baseKV	zone	Vmax	Vmin
+mpc.bus = [
+	1	3	0	0	0	0	1	1.06	0	0	1	1.06	0.94;
+	2	2	21.7	12.7	0	0	1	1.045	-4.98	0	1	1.06	0.94;
+	3	2	94.2	19	0	0	1	1.01	-12.72	0	1	1.06	0.94;
+	4	1	47.8	-3.9	0	0	1	1.019	-10.33	0	1	1.06	0.94;
+	5	1	7.6	1.6	0	0	1	1.02	-8.78	0	1	1.06	0.94;
+	6	2	11.2	7.5	0	0	1	1.07	-14.22	0	1	1.06	0.94;
+	7	1	0	0	0	0	1	1.062	-13.37	0	1	1.06	0.94;
+	8	2	0	0	0	0	1	1.09	-13.36	0	1	1.06	0.94;
+	9	1	29.5	16.6	0	19	1	1.056	-14.94	0	1	1.06	0.94;
+	10	1	9	5.8	0	0	1	1.051	-15.1	0	1	1.06	0.94;
+	11	1	3.5	1.8	0	0	1	1.057	-14.79	0	1	1.06	0.94;
+	12	1	6.1	1.6	0	0	1	1.055	-15.07	0	1	1.06	0.94;
+	13	1	13.5	5.8	0	0	1	1.05	-15.16	0	1	1.06	0.94;
+	14	1	14.9	5	0	0	1	1.036	-16.04	0	1	1.06	0.94;
+];
+% dados dos generadores com o Qmax reduzido 
+%	bus	Pg	Qg	Qmax	Qmin	Vg	mBase	status	Pmax	Pmin
+mpc.gen = [
+	1	232.4	-16.9	8.0	    0	    1.06	100	    1	    332.4	0;  
+	2	40	    42.4	40.0	-40	    1.045	100	    1	    140	    0;  
+	3	0	    23.4	32.0	0	    1.01	100	    1	    100	    0;  
+	6	0	    12.2	19.2	-6	    1.07	100	    1	    100	    0;  
+	8	0	    17.4	19.2	-6	    1.09	100	    1	    100	    0;  
+];
+
+% construção da matriz Y
+nb = max(max(Matriz(:,1:2)));
+Ybus = zeros(nb,nb);
+
+for k = 1:size(Matriz,1)
+    i = Matriz(k,1); 
+    j = Matriz(k,2);
+    z = Matriz(k,3) + 1j*Matriz(k,4);
+    y = 1/z;
+    Ybus(i,j) = -y;
+    Ybus(j,i) = -y;
+end
+
+% elementos da diagonal
+for i = 1:nb
+    Ybus(i,i) = -sum(Ybus(i,:));
+end
+
+nbus = length(busdata(:,1)); 
+nbr = length(Matriz(:,1)); 
+
+nl = Matriz(:,1); 
+nr = Matriz(:,2);
+
+
+bus = busdata(:,1);          
+Vm = busdata(:,2);             
+delta = busdata(:,3) * pi/180; 
+Pg = busdata(:,4);             
+Qg = busdata(:,5);               
+Pd = busdata(:,6);             
+Qd = busdata(:,7);             
+Qmax = busdata(:,8);           
+Qmin = busdata(:,9);           
+type = busdata(:,10);          % Tipo 1=Slack, 2=PV, 3=PQ
+
+kb = zeros(nbus,1);
+kb(type == 1) = 1; % Slack
+kb(type == 2) = 2; % PV
+kb(type == 3) = 0; % PQ
+
+% calculo de potencias para pu
+P = (Pg - Pd)/basemva;
+Q = (Qg - Qd)/basemva;
+S = P + j*Q;
+
+% compensadores Shunts
+Qsh = zeros(nbus,1);
+Qsh(9) = 19;
+
+% Limites da potencia reativa
+Qmin = Qmin/basemva;
+Qmax = Qmax/basemva;
+
+% Matriz 
+Ym = abs(Ybus); 
+t = angle(Ybus); 
+G = real(Ybus);  
+B = imag(Ybus); 
+
+% ----------------- Newton Raphson---------- 
+maxerror = 1; 
+iter = 0;
+accuracy = tol; 
+maxiter = lim;
+
+
+while maxerror > accuracy && iter < maxiter
+    p0 = find(kb == 2); 
+    sl = find(kb == 1); 
+    p2 = find(kb == 0); 
+    
+    iter = iter + 1;
+    
+    % potencias calculadas
+    Ps = zeros(nbus,1);
+    Qs = zeros(nbus,1);
+    
+    % injetadas
+    for k = 1:nbus
+        if kb(k) ~= 1 
+            for m = 1:nbus
+                Ps(k) = Ps(k) + Vm(k)*Vm(m)*Ym(k,m)*cos(t(k,m) - delta(k) + delta(m));
+                Qs(k) = Qs(k) - Vm(k)*Vm(m)*Ym(k,m)*sin(t(k,m) - delta(k) + delta(m));
+            end
+        end
+        if kb(k) == 1 % barra Slack
+            Qs(k) = 0;
+        end
+    end
+    
+    
+    dP = P - Ps;
+    dP(sl) = []; 
+    
+    dQ = Q - Qs;
+    for i = length(dQ):-1:1
+        if kb(i) == 2 || kb(i) == 1
+            dQ(i) = []; 
+        end
+    end
+    
+    dPdQ = [dP; dQ];
+    maxerror = max(abs(dPdQ));
+    
+    
+    %Matriz jacobiana 
+    %montagem matriz 
+    J1 = zeros(nbus,nbus); J2_1 = zeros(nbus,nbus); 
+    J2 = zeros(nbus,nbus); J3 = zeros(nbus,nbus); 
+    J4_1 = zeros(nbus,nbus); J4 = zeros(nbus,nbus);
+    
+    for i = 1:nbus
+        J2_1(i,i) = 2*Vm(i)*Ym(i,i)*cos(t(i,i));
+        J4_1(i,i) = -2*Vm(i)*Ym(i,i)*sin(t(i,i));
+        
+        for j = 1:nbus
+            if j ~= i
+                % Elementos J1 
+                J1(i,i) = J1(i,i) + Vm(i)*Vm(j)*Ym(i,j)*sin(t(i,j) - delta(i) + delta(j));     
+                J1(i,j) = -Vm(i)*Vm(j)*Ym(i,j)*sin(t(i,j) - delta(i) + delta(j));
+                
+                % Elementos J3 
+                J3(i,i) = J3(i,i) + Vm(i)*Vm(j)*Ym(i,j)*cos(t(i,j) - delta(i) + delta(j));     
+                J3(i,j) = -Vm(i)*Vm(j)*Ym(i,j)*cos(t(i,j) - delta(i) + delta(j));
+                
+                % Elementos J2 
+                J2_1(i,i) = J2_1(i,i) + Vm(j)*Ym(i,j)*cos(t(i,j) - delta(i) + delta(j));     
+                J2(i,j) = Vm(i)*Ym(i,j)*cos(t(i,j) - delta(i) + delta(j));
+                
+                % Elementos J4 
+                J4_1(i,i) = J4_1(i,i) - Vm(j)*Ym(i,j)*sin(t(i,j) - delta(i) + delta(j));     
+                J4(i,j) = -Vm(i)*Ym(i,j)*sin(t(i,j) - delta(i) + delta(j));
+            end
+        end
+    end
+    
+    J2 = J2 + J2_1;
+    J4 = J4 + J4_1;
+    
+    for i = length(p0):-1:1
+        J2(:,p0(i)) = [];
+        J3(p0(i),:) = [];
+        J4(p0(i),:) = [];
+        J4(:,p0(i)) = [];
+    end
+    
+    J1(sl,:) = []; J1(:,sl) = [];
+    J2(sl,:) = []; J2(:,sl) = [];
+    J3(sl,:) = []; J3(:,sl) = [];
+    J4(sl,:) = []; J4(:,sl) = [];     
+    
+    J = [J1 J2; J3 J4];
+    VABK2 = J\dPdQ;
+    
+    % Ãngulos
+    D_gocpha = VABK2(1:nbus-1);
+    D_gocpha(sl+1:nbus) = D_gocpha(sl:end);
+    D_gocpha(sl) = 0;
+    delta = delta + D_gocpha;
+    
+   %tensão e magnitude
+    Vk = VABK2(length(J2(:,1))+1:end);
+    dV = zeros(nbus,1);
+    f = 1;
+    for i = 1:nbus
+        for j = 1:length(p2)
+            if i == p2(j)
+                dV(i) = Vk(f);
+                f = f + 1;
+            end
+        end
+    end
+    Vm = Vm + dV;
+    
+    % --------limites------------
+    if maxerror < 1e-4 && iter > 2
+        for i = length(p0):-1:1
+            if Qmin(p0(i)) ~= 0 || Qmax(p0(i)) ~= 0
+                QG = Qs(p0(i)) + Qd(p0(i))/basemva;
+                if QG < Qmin(p0(i))
+                    Vm(p0(i)) = Vm(p0(i)) + 0.01;
+                   
+                elseif QG > Qmax(p0(i))
+                    Vm(p0(i)) = Vm(p0(i)) - 0.01;
+
+                end
+            end
+        end
+    end
+end
+
+P = zeros(1,nbus);
+Q = zeros(1,nbus);
+p1 = find(kb == 2 | kb == 1);
+
+for i = 1:nbus
+    for j = 1:nbus
+        P(i) = P(i) + Vm(i)*Vm(j)*Ym(i,j)*cos(t(i,j) - delta(i) + delta(j));
+        Q(i) = Q(i) + Vm(i)*Vm(j)*Ym(i,j)*sin(t(i,j) - delta(i) + delta(j));
+    end
+end
+
+P = P' * basemva;
+Q = Q' * basemva;
+
+%gerações
+Pg(sl) = P(sl);
+for i = 1:length(p1)
+    Qg(p1(i)) = -Q(p1(i)) - Qsh(p1(i)) + Qd(p1(i));
+end
+
+% tensões
+V = Vm.*cos(delta) + j*Vm.*sin(delta);
+delta_deg = delta * 180/pi;
+
+% Sistema
+Pdt = sum(Pd); 
+Pgt = sum(Pg);
+Qdt = sum(Qd); 
+Qgt = sum(Qg);
+Qsht = sum(Qsh);
+
+% Resultados
+fprintf('\n=============== RESULTADOS DO FLUXO DE POTÊNCIA ===============\n');
+
+if maxerror > accuracy
+    tech = ('SOLUÇÃO ITERATIVA NÃO CONVERGIU');
+else
+    tech = ('SOLUÇÃO CONVERGIU');
+end
+tempo = toc;
+disp(tech)
+fprintf('Número de Interações = %g \n', iter)
+fprintf('Tempo(s): %.4f\n', tempo);
+
+
+head = {
+'    Barra  Tensão  ângulo    |    Carga    |      |  Geração  |   Injetado'
+'    NÂº     Mag.    Graus      MW       Mvar       MW       Mvar     Mvar   '
+'                                                                          '
+};
+
+for i = 1:length(head)
+    fprintf('%s\n', head{i});
+end
+
+for n = 1:nbus
+    fprintf(' %5g', n), fprintf(' %7.3f', Vm(n)),
+    fprintf(' %8.3f', delta_deg(n)), fprintf(' %9.3f', Pd(n)),
+    fprintf(' %9.3f', Qd(n)), fprintf(' %9.3f', Pg(n)),
+    fprintf(' %9.3f ', Qg(n)), fprintf(' %8.3f\n', Qsh(n))
+end
