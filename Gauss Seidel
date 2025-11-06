@@ -1,167 +1,205 @@
-mpopt=mpoption('pf.alg', 'GS');
-runpf('case14_20', mpopt)
+%% Gauss-Seidel corrigido (IEEE 14 - seus dados)
+clear; clc; close all;
+tic
 
-clc; clear; close all;
+%% Parâmetros
+Sbase = 100;      % MVA
+tol = 1e-4;
+max_iter = 100;
 
-nbus = 14;
-baseMVA = 100; % Valor base
-
-% --------------------- Dados das BARRAS --------------------------
-% [bus  type  Pd  Qd  Vm_spec]
-bus_data = [
-    1   3   0     0     1.06;
-    2   2   21.7  12.7  1.045;
-    3   2   94.2  19.0  1.010;
-    4   1   47.8  -3.9  1.019;
-    5   1   7.6   1.6   1.020;
-    6   2   11.2  7.5   1.070;
-    7   1   0     0     1.062;
-    8   2   0     0     1.090;
-    9   1   29.5  16.6  1.056;
-    10  1   9.0   5.8   1.051;
-    11  1   3.5   1.8   1.057;
-    12  1   6.1   1.6   1.055;
-    13  1   13.5  5.8   1.050;
-    14  1   14.9  5.0   1.036
+%% Branch: fbus tbus r x b
+branch = [
+    1 2 0.01938 0.05917 0.0528;
+    1 5 0.05403 0.22304 0.0492;
+    2 3 0.04699 0.19797 0.0438;
+    2 4 0.05811 0.17632 0.034;
+    2 5 0.05695 0.17388 0.0346;
+    3 4 0.06701 0.17103 0.0128;
+    4 5 0.01335 0.04211 0;
+    4 7 0 0.20912 0;
+    4 9 0 0.55618 0;
+    5 6 0 0.25202 0;
+    6 11 0.09498 0.1989 0;
+    6 12 0.12291 0.25581 0;
+    6 13 0.06615 0.13027 0;
+    7 8 0 0.17615 0;
+    7 9 0 0.11001 0;
+    9 10 0.03181 0.0845 0;
+    9 14 0.12711 0.27038 0;
+    10 11 0.08205 0.19207 0;
+    12 13 0.22092 0.19988 0;
+    13 14 0.17093 0.34802 0;
 ];
 
-bus_type = bus_data(:,2);
-Pd = bus_data(:,3);
-Qd = bus_data(:,4);
-V_spec = bus_data(:,5);
-
-% -------------------- Dados dos GERADORES ------------------------
-% [bus Pg Qg Qmax Qmin Vg]
-gen_data = [
-    1 232.4  -16.9  8     0     1.06;
-    2 40.0    42.4   40   -40    1.045;
-    3 0.0     23.4   32    0     1.010;
-    6 0.0     12.2   19.2  -6    1.070;
-    8 0.0     17.4   19.2  -6    1.090
+%% Bus data: bus type Pd Qd Vm Va
+busdata = [
+1 3 0     0     1.06  0;
+2 2 21.7  12.7  1.045 -4.98;
+3 2 94.2  19    1.01  -12.72;
+4 1 47.8 -3.9   1.019 -10.33;
+5 1 7.6   1.6   1.02  -8.78;
+6 2 11.2  7.5   1.07  -14.22;
+7 1 0     0     1.062 -13.37;
+8 2 0     0     1.09  -13.36;
+9 1 29.5  16.6  1.056 -14.94;
+10 1 9    5.8   1.051 -15.1;
+11 1 3.5  1.8   1.057 -14.79;
+12 1 6.1  1.6   1.055 -15.07;
+13 1 13.5 5.8   1.05  -15.16;
+14 1 14.9 5     1.036 -16.04;
 ];
 
-% Vetores de geração total
+%% Generator data: bus Pg Qg Qmax Qmin Vg
+gendata = [
+1 232.4 -16.9 8 0 1.06;
+2 40    42.4 40 -40 1.045;
+3 0     23.4 32 0 1.01;
+6 0     12.2 19.2 -6 1.07;
+8 0     17.4 19.2 -6 1.09;
+];
+
+%% dimensões
+nbus = size(busdata,1);
+nbr  = size(branch,1);
+
+%% Monta Ybus (incluindo metade do shunt b/2 nos terminais)
+Ybus = zeros(nbus);
+for k = 1:nbr
+    i = branch(k,1); j = branch(k,2);
+    r = branch(k,3); x = branch(k,4); b = branch(k,5);
+    if r==0 && x==0
+        z = 1e-12 + 1j*1e-12; % evitar divisão por zero (se necessário)
+    else
+        z = r + 1j*x;
+    end
+    y = 1/z;
+    bsh = 1j*b/2;
+    Ybus(i,i) = Ybus(i,i) + y + bsh;
+    Ybus(j,j) = Ybus(j,j) + y + bsh;
+    Ybus(i,j) = Ybus(i,j) - y;
+    Ybus(j,i) = Ybus(j,i) - y;
+end
+
+%% Inicializações (tensões, tipos, P e Q em pu)
+Vm = busdata(:,5);
+delta = busdata(:,6)*pi/180;
+V = Vm .* exp(1j*delta);         % vetor complex de tensões inicial
+Pd = busdata(:,3)/Sbase;
+Qd = busdata(:,4)/Sbase;
+
 Pg = zeros(nbus,1);
 Qg = zeros(nbus,1);
 Qmax = zeros(nbus,1);
 Qmin = zeros(nbus,1);
-for k = 1:size(gen_data,1)
-    bus = gen_data(k,1);
-    Pg(bus) = gen_data(k,2);
-    Qg(bus) = gen_data(k,3);
-    Qmax(bus) = gen_data(k,4);
-    Qmin(bus) = gen_data(k,5);
+for k = 1:size(gendata,1)
+    b = gendata(k,1);
+    Pg(b) = gendata(k,2)/Sbase;
+    Qg(b) = gendata(k,3)/Sbase;
+    Qmax(b) = gendata(k,4)/Sbase;
+    Qmin(b) = gendata(k,5)/Sbase;
 end
 
-% Potência líquida (em pu)
-P = (Pg - Pd) / baseMVA;
-Q = (Qg - Qd) / baseMVA;
+% tipos: 1 slack, 2 PV, 0 PQ
+type = zeros(nbus,1);
+type(:) = 0;
+type(1) = 1;            % slack
+type([2 3 6 8]) = 2;    % PV buses
 
-% Inicialização das tensões
-V = ones(nbus, 1);
+% Vetores net injection (pu)
+P_spec = Pg - Pd;
+Q_spec = Qg - Qd;
 
-% --------------------- Matriz de Admitância ----------------------
-Ybus = [... % mesma matriz do seu código original
-6.0296-19.5042j, -5.0037+15.2693j, 0, 0, -1.0259+4.2349j, 0, 0, 0, 0, 0, 0, 0, 0, 0;
--5.0037+15.2693j, 9.5258-30.3609j, -1.1350+4.7819j, -1.6860+5.1158j, -1.7011+5.1939j, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-0, -1.1350+4.7819j, 3.1209-9.8507j, -1.9859+5.0688j, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-0, -1.6860+5.1158j, -1.9859+5.0688j, 10.2281-38.3072j, -6.8410+21.5786j, 0, 0+4.8895j, 0, 0+1.8555j, 0, 0, 0, 0, 0;
--1.0259+4.2349j, -1.7011+5.1939j, 0, -6.8410+21.5786j, 9.5680-35.2649j, 0+4.2575j, 0, 0, 0, 0, 0, 0, 0, 0;
-0, 0, 0, 0, 0+4.2575j, 6.5792-17.6302j, 0, 0, 0, 0, -1.9550+4.0941j, -1.5259+3.1759j, -3.0983+6.1028j, 0;
-0, 0, 0, 0+4.8889j, 0, 0, 0-19.6566j, 0+5.6769j, 0+9.0901j, 0, 0, 0, 0, 0;
-0, 0, 0, 0, 0, 0, 0+5.6769j, 0-5.6769j, 0, 0, 0, 0, 0, 0;
-0, 0, 0, 0+1.8555j, 0, 0, 0+9.0901j, 0, 5.3261-24.3400j, 0, 0, 0, -1.4240+3.0290j, 0;
-0, 0, 0, 0, 0, 0, 0, 0, -3.9020+10.3654j, 5.7829-14.7684j, -1.8809+4.4030j, 0, 0, 0;
-0, 0, 0, 0, 0, -1.9550+4.0941j, 0, 0, 0, -1.8809+4.4030j, 3.8359-8.4971j, 0, 0, 0;
-0, 0, 0, 0, 0, -1.5259+3.1759j, 0, 0, 0, 0, 0, 4.0159-5.4279j, -2.4890+2.2520j, 0;
-0, 0, 0, 0, 0, -3.0983+6.1028j, 0, 0, 0, 0, 0, -2.4890+2.2520j, 6.7243-10.6698j, -1.1370+2.3150j;
-0, 0, 0, 0, 0, 0, 0, 0, -1.4240+3.0290j, 0, 0, 0, -1.1370+2.3150j, 2.5610-5.3440j
-];
-
-% --------------------- Método Gauss-Seidel ----------------------
-tol = 1e-4;
-max_iter = 100;
+%% GS loop
 iter = 0;
-
-tic
 while true
-    V_old = V;
+    V_prev = V;
     iter = iter + 1;
 
     for i = 1:nbus
-        if bus_type(i) == 3
-            continue;
+        if type(i) == 1
+            continue; % não atualiza slack
         end
 
+        % soma Yij*Vj (j != i)
         soma = 0;
         for j = 1:nbus
-            if j ~= i
-                soma = soma + Ybus(i,j) * V(j);
+            if j~=i
+                soma = soma + Ybus(i,j)*V(j);
             end
         end
 
-        % Atualiza tensão
-        V(i) = (1 / Ybus(i,i)) * ((P(i) - 1i * Q(i)) / conj(V(i)) - soma);
-
-        % Controle para barra PV
-        if bus_type(i) == 2
-            V_mag = V_spec(i);
-            V_ang = angle(V(i));
-            V(i) = V_mag * exp(1i * V_ang);
-
-            % Atualiza Q gerado e aplica limites
-            Q_calc = -imag(conj(V(i)) * (Ybus(i,:) * V));
-            if Q_calc > Qmax(i)
-                Q_calc = Qmax(i);
-                bus_type(i) = 1; % vira PQ temporariamente
-            elseif Q_calc < Qmin(i)
-                Q_calc = Qmin(i);
-                bus_type(i) = 1; % vira PQ temporariamente
+        % Para PQ: V_i = (1/Y_ii) * ( (P_spec(i) - j Q_spec(i))/conj(V_i) - soma )
+        % Para PV: usar magnitude fixada (após cálculo), mas iteramos como PQ para corrente Q
+        if type(i) == 0  % PQ
+            V(i) = (1/Ybus(i,i)) * ((P_spec(i) - 1j*Q_spec(i))/conj(V(i)) - soma);
+        elseif type(i) == 2  % PV: atualiza como PQ para encontrar Q, depois fixa magnitude
+            % calcula V_temp como se PQ usando Q_spec current (Qg may be updated)
+            Vtemp = (1/Ybus(i,i)) * ((P_spec(i) - 1j*Q_spec(i))/conj(V(i)) - soma);
+            % ajusta magnitude para especificada
+            V(i) = abs(busdata(i,5)) * exp(1j*angle(Vtemp));
+            % calcula Q gerado aproximado com nova V
+            Qcalc = -imag(conj(V(i)) * (Ybus(i,:)*V));
+            % aplica limites de Q (se violar, transforma em PQ e fixa Q)
+            if Qcalc > Qmax(i) && Qmax(i) ~= 0
+                Q_spec(i) = Qmax(i) - Qd(i); % Qg = Qmax -> Q_spec = Qg - Qd
+                type(i) = 0; % transforma em PQ para iterações futuras
+            elseif Qcalc < Qmin(i) && Qmin(i) ~= 0
+                Q_spec(i) = Qmin(i) - Qd(i);
+                type(i) = 0;
+            else
+                % atualizar Q_spec com Qcalc (mantém como PV)
+                Q_spec(i) = Qcalc - Qd(i);
             end
-            Q(i) = Q_calc;
         end
     end
 
-    erro = max(abs(V - V_old));
-    if erro < tol || iter >= max_iter
+    err = max(abs(V - V_prev));
+    if err < tol || iter >= max_iter
         break;
     end
 end
 
-% --------------------- Saída de Resultados ----------------------
-fprintf('\n--- RESULTADOS DO FLUXO DE POTÊNCIA (GAUSS-SEIDEL) ---\n');
-fprintf('Iterações: %d\n\n', iter);
-fprintf('Barra |   |V| (pu)   |   Ângulo (graus)\n');
-fprintf('----------------------------------------\n');
-for i = 1:nbus
-    fprintf('  %d   |   %.6f   |     %.6f°\n', i, abs(V(i)), rad2deg(angle(V(i))));
-end
+tempo = toc;
 
-tempo_convergencia = toc;
-
-S_inj = V .* conj(Ybus * V);
+%% Resultados por barra
+Vmag = abs(V);
+Vang = rad2deg(angle(V));
+S_inj = V .* conj(Ybus * V); % injeção nodal (pu)
 P_inj = real(S_inj);
 Q_inj = imag(S_inj);
-P_total = sum(P_inj);
-Q_total = sum(Q_inj);
-P_espec = sum(P);
-Q_espec = sum(Q);
-P_perdas = P_total - P_espec;
-Q_perdas = Q_total - Q_espec;
 
-fprintf('\n## Resultados por Barra\n');
-fprintf('Barra | |V| (pu) | Ângulo (graus) | P Injetado (pu) | Q Injetado (pu)\n');
-fprintf('-------------------------------------------------------------------------\n');
-for i = 1:nbus
-    fprintf('  %d   | %.6f |   %.6f°   |   %.6f    |   %.6f\n', ...
-        i, abs(V(i)), rad2deg(angle(V(i))), P_inj(i), Q_inj(i));
+%% Perdas por ramo (em MW)
+Ploss_branch = zeros(nbr,1);
+Qloss_branch = zeros(nbr,1);
+for k = 1:nbr
+    i = branch(k,1); j = branch(k,2);
+    r = branch(k,3); x = branch(k,4); b = branch(k,5);
+    z = r + 1j*x;
+    y = 1/z;
+    bsh = 1j*b/2;
+
+    Vi = V(i); Vj = V(j);
+    Iij = (Vi - Vj)/z + Vi*bsh;   % corrente no terminal i (inclui metade do shunt)
+    Iji = (Vj - Vi)/z + Vj*bsh;   % corrente no terminal j
+
+    Ploss_branch(k) = real(Vi*conj(Iij) + Vj*conj(Iji)) * Sbase; % MW
+    Qloss_branch(k) = imag(Vi*conj(Iij) + Vj*conj(Iji)) * Sbase; % MVAr
 end
+P_total_losses_MW = sum(Ploss_branch);
+Q_total_losses_MVAr = sum(Qloss_branch);
 
-fprintf('\n## Resumo do Sistema\n');
-fprintf('Tempo de Convergência: %.6f segundos\n', tempo_convergencia);
-fprintf('Total de Iterações: %d\n', iter);
-fprintf('Potência Ativa Total Injetada: %.6f pu\n', P_total);
-fprintf('Potência Reativa Total Injetada: %.6f pu\n', Q_total);
-fprintf('Perdas Ativas no Sistema: %.6f pu\n', P_perdas);
-fprintf('Perdas Reativas no Sistema: %.6f pu\n', Q_perdas);
+%% Impressão
+fprintf('\n--- RESULTADOS GAUSS-SEIDEL (corrigido) ---\n');
+fprintf('Iterações: %d | Erro final: %.3e | Tempo: %.4f s\n', iter, err, tempo);
+fprintf('\nBarra |  |V|(pu)  | Ang (deg) | P_inj (pu) | Q_inj (pu)\n');
+fprintf('---------------------------------------------------\n');
+for i=1:nbus
+    fprintf('%3d   %8.4f   %8.3f    %9.4f    %9.4f\n', i, Vmag(i), Vang(i), P_inj(i), Q_inj(i));
+end
+fprintf('\nPerdas totais (ramo a ramo): P = %.3f MW, Q = %.3f MVAr\n', P_total_losses_MW, Q_total_losses_MVAr);
 
+% opcional: exibir perdas por ramo
+fprintf('\nPerdas por ramo (MW):\n');
+for k=1:nbr
+    fprintf(' %2d-%2d : %8.3f MW\n', branch(k,1), branch(k,2), Ploss_branch(k));
+end
