@@ -1,7 +1,7 @@
 % 14 barras sep
 
 % estrutura
-tol = 1e-5;     
+tol = 1e-4;     
 lim = 100;      
 Sbase = 100;    % base MVA
 basemva = Sbase;
