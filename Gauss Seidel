@@ -1,9 +1,9 @@
-%% Gauss-Seidel corrigido (IEEE 14 - seus dados)
+% Método Gauss Seidel 
 clear; clc; close all;
 tic
 
 %% Parâmetros
-Sbase = 100;      % MVA
+Sbase = 100;      
 tol = 1e-4;
 max_iter = 100;
 
@@ -62,7 +62,7 @@ gendata = [
 nbus = size(busdata,1);
 nbr  = size(branch,1);
 
-%% Monta Ybus (incluindo metade do shunt b/2 nos terminais)
+%% Monta Ybus 
 Ybus = zeros(nbus);
 for k = 1:nbr
     i = branch(k,1); j = branch(k,2);
@@ -80,10 +80,10 @@ for k = 1:nbr
     Ybus(j,i) = Ybus(j,i) - y;
 end
 
-%% Inicializações (tensões, tipos, P e Q em pu)
+%% Inicio
 Vm = busdata(:,5);
 delta = busdata(:,6)*pi/180;
-V = Vm .* exp(1j*delta);         % vetor complex de tensões inicial
+V = Vm .* exp(1j*delta);        
 Pd = busdata(:,3)/Sbase;
 Qd = busdata(:,4)/Sbase;
 
@@ -99,17 +99,17 @@ for k = 1:size(gendata,1)
     Qmin(b) = gendata(k,5)/Sbase;
 end
 
-% tipos: 1 slack, 2 PV, 0 PQ
+% tipos de barras: 1 slack, 2 PV, 0 PQ
 type = zeros(nbus,1);
 type(:) = 0;
 type(1) = 1;            % slack
 type([2 3 6 8]) = 2;    % PV buses
 
-% Vetores net injection (pu)
+% Vetores das perdas (pu)
 P_spec = Pg - Pd;
 Q_spec = Qg - Qd;
 
-%% GS loop
+%% Gauss seidel
 iter = 0;
 while true
     V_prev = V;
@@ -120,7 +120,7 @@ while true
             continue; % não atualiza slack
         end
 
-        % soma Yij*Vj (j != i)
+    
         soma = 0;
         for j = 1:nbus
             if j~=i
@@ -128,26 +128,25 @@ while true
             end
         end
 
-        % Para PQ: V_i = (1/Y_ii) * ( (P_spec(i) - j Q_spec(i))/conj(V_i) - soma )
-        % Para PV: usar magnitude fixada (após cálculo), mas iteramos como PQ para corrente Q
+    
         if type(i) == 0  % PQ
             V(i) = (1/Ybus(i,i)) * ((P_spec(i) - 1j*Q_spec(i))/conj(V(i)) - soma);
-        elseif type(i) == 2  % PV: atualiza como PQ para encontrar Q, depois fixa magnitude
-            % calcula V_temp como se PQ usando Q_spec current (Qg may be updated)
+        elseif type(i) == 2  
+            % calcula V_temp
             Vtemp = (1/Ybus(i,i)) * ((P_spec(i) - 1j*Q_spec(i))/conj(V(i)) - soma);
-            % ajusta magnitude para especificada
+            %  magnitude 
             V(i) = abs(busdata(i,5)) * exp(1j*angle(Vtemp));
-            % calcula Q gerado aproximado com nova V
+            % calcula Q gerado aproximado com nova V (importanteee!!)
             Qcalc = -imag(conj(V(i)) * (Ybus(i,:)*V));
-            % aplica limites de Q (se violar, transforma em PQ e fixa Q)
+            
             if Qcalc > Qmax(i) && Qmax(i) ~= 0
                 Q_spec(i) = Qmax(i) - Qd(i); % Qg = Qmax -> Q_spec = Qg - Qd
-                type(i) = 0; % transforma em PQ para iterações futuras
+                type(i) = 0; % transforma em PQ para novas iterações 
             elseif Qcalc < Qmin(i) && Qmin(i) ~= 0
                 Q_spec(i) = Qmin(i) - Qd(i);
                 type(i) = 0;
             else
-                % atualizar Q_spec com Qcalc (mantém como PV)
+                
                 Q_spec(i) = Qcalc - Qd(i);
             end
         end
@@ -179,8 +178,8 @@ for k = 1:nbr
     bsh = 1j*b/2;
 
     Vi = V(i); Vj = V(j);
-    Iij = (Vi - Vj)/z + Vi*bsh;   % corrente no terminal i (inclui metade do shunt)
-    Iji = (Vj - Vi)/z + Vj*bsh;   % corrente no terminal j
+    Iij = (Vi - Vj)/z + Vi*bsh;  
+    Iji = (Vj - Vi)/z + Vj*bsh;  
 
     Ploss_branch(k) = real(Vi*conj(Iij) + Vj*conj(Iji)) * Sbase; % MW
     Qloss_branch(k) = imag(Vi*conj(Iij) + Vj*conj(Iji)) * Sbase; % MVAr
@@ -198,7 +197,7 @@ for i=1:nbus
 end
 fprintf('\nPerdas totais (ramo a ramo): P = %.3f MW, Q = %.3f MVAr\n', P_total_losses_MW, Q_total_losses_MVAr);
 
-% opcional: exibir perdas por ramo
+
 fprintf('\nPerdas por ramo (MW):\n');
 for k=1:nbr
     fprintf(' %2d-%2d : %8.3f MW\n', branch(k,1), branch(k,2), Ploss_branch(k));
